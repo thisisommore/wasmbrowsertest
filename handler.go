@@ -32,6 +32,7 @@ type wasmServer struct {
 	logger        *log.Logger
 	fsHandler     *filesys.Handler
 	securityToken string
+	customScript  []byte
 }
 
 var wasmLocations = []string{
@@ -39,7 +40,7 @@ var wasmLocations = []string{
 	"lib/wasm/wasm_exec.js",
 }
 
-func NewWASMServer(wasmFile string, args []string, coverageFile string, l *log.Logger) (http.Handler, error) {
+func NewWASMServer(wasmFile string, args []string, coverageFile string, l *log.Logger, customScriptPath string) (http.Handler, error) {
 	var err error
 	srv := &wasmServer{
 		wasmFile: wasmFile,
@@ -82,6 +83,15 @@ func NewWASMServer(wasmFile string, args []string, coverageFile string, l *log.L
 	}
 	srv.wasmExecJS = buf
 
+	// Load custom script if provided
+	if customScriptPath != "" {
+		customBuf, err := os.ReadFile(customScriptPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read custom script file %s: %w", customScriptPath, err)
+		}
+		srv.customScript = customBuf
+	}
+
 	srv.indexTmpl, err = template.New("index").Parse(indexHTML)
 	if err != nil {
 		return nil, err
@@ -95,19 +105,21 @@ func (ws *wasmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/", "/index.html":
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 		data := struct {
-			WASMFile      string
-			Args          []string
-			EnvMap        map[string]string
-			SecurityToken string
-			Pid           int
-			Ppid          int
+			WASMFile        string
+			Args            []string
+			EnvMap          map[string]string
+			SecurityToken   string
+			Pid             int
+			Ppid            int
+			HasCustomScript bool
 		}{
-			WASMFile:      filepath.Base(ws.wasmFile),
-			Args:          ws.args,
-			EnvMap:        ws.envMap,
-			SecurityToken: ws.securityToken,
-			Pid:           os.Getpid(),
-			Ppid:          os.Getppid(),
+			WASMFile:        filepath.Base(ws.wasmFile),
+			Args:            ws.args,
+			EnvMap:          ws.envMap,
+			SecurityToken:   ws.securityToken,
+			Pid:             os.Getpid(),
+			Ppid:            os.Getppid(),
+			HasCustomScript: len(ws.customScript) > 0,
 		}
 		err := ws.indexTmpl.Execute(w, data)
 		if err != nil {
@@ -131,6 +143,12 @@ func (ws *wasmServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", strconv.Itoa(len(ws.wasmExecJS)))
 		if _, err := w.Write(ws.wasmExecJS); err != nil {
 			ws.logger.Println("unable to write wasm_exec.")
+		}
+	case "/custom.js":
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Header().Set("Content-Length", strconv.Itoa(len(ws.customScript)))
+		if _, err := w.Write(ws.customScript); err != nil {
+			ws.logger.Println("unable to write custom script.")
 		}
 	default:
 		if strings.HasPrefix(r.URL.Path, "/fs/") {

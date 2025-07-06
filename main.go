@@ -47,6 +47,7 @@ func run(ctx context.Context, args []string, errOutput io.Writer, flagSet *flag.
 
 	cpuProfile := flagSet.String("test.cpuprofile", "", "")
 	coverageProfile := flagSet.String("test.coverprofile", "", "")
+	customScript := flagSet.String("custom.script", "", "Path to custom JavaScript file to include in the test environment")
 
 	wasmFile := args[1]
 	ext := path.Ext(wasmFile)
@@ -71,7 +72,7 @@ func run(ctx context.Context, args []string, errOutput io.Writer, flagSet *flag.
 	}
 
 	// Setup web server.
-	handler, err := NewWASMServer(wasmFile, passon, *coverageProfile, logger)
+	handler, err := NewWASMServer(wasmFile, passon, *coverageProfile, logger, *customScript)
 	if err != nil {
 		return err
 	}
